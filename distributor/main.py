@@ -825,7 +825,7 @@ async function load() {
       const accepts = (p.accepts || []).map((k) =>
         `<span class="pill">${escapeHtml(k)}</span>`).join("");
       const stats = p.stats || {};
-      const snippetText = "project_allowlist:\n  - " + p.slug;
+      const snippetText = "project_allowlist:\\n  - " + p.slug;
       return `
         <div class="project">
           <div class="top">
