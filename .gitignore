@@ -7,3 +7,18 @@ node_modules/
 .vscode/
 dist/
 build/
+documentation_notes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Claude Code local settings (per-machine)
+.claude/settings.local.json

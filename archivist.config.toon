@@ -1,0 +1,10 @@
+project_name: spare-change
+archiving: true
+archive_path: documentation_notes
+pause_threshold: 5
+phase: build
+capture:
+  devserver_ports[5]: 3000,5173,8080,4000,4321
+  figma_mcp: true
+  paper_mcp: true
+  breakpoints[4]: 375,414,768,1280
