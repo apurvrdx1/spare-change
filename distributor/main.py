@@ -124,15 +124,18 @@ def api_dashboard() -> dict:
     )[:12]
     recent = []
     for rec in records:
+        output = rec.result.output if rec.result else ""
         recent.append({
             "task_id": rec.task.task_id,
             "project": rec.task.project_slug,
+            "path": rec.task.metadata.get("path"),
             "kind": rec.task.metadata.get("kind") or rec.task.kind,
             "status": rec.status.value,
             "result_status": rec.result.status.value if rec.result else None,
             "donor": rec.result.agent_id if rec.result else None,
             "cost_usd": float(rec.result.estimated_cost_usd or 0.0) if rec.result else None,
-            "output_chars": len(rec.result.output) if rec.result else 0,
+            "output_chars": len(output),
+            "output_preview": output[:600] if output else "",
             "created_at": rec.task.created_at.isoformat() if rec.task.created_at else None,
             "finished_at": rec.result.finished_at.isoformat() if rec.result and rec.result.finished_at else None,
         })
@@ -194,6 +197,16 @@ _DASHBOARD_HTML = """<!doctype html>
   .pill.failed { background: #4a1414; color: var(--red); }
   code { font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
   .empty { color: var(--muted); font-size: 13px; padding: 12px 0; text-align: center; }
+  tr.task-row { cursor: pointer; }
+  tr.task-row:hover { background: #161e29; }
+  tr.preview-row td { padding: 0; border-bottom: 1px solid var(--line); }
+  tr.preview-row.hidden { display: none; }
+  pre.preview { margin: 0; padding: 12px 14px; background: #07090d; color: #c9d1d9;
+    font: 12px/1.55 ui-monospace, "SF Mono", Menlo, monospace; max-height: 360px;
+    overflow: auto; white-space: pre-wrap; word-break: break-word; }
+  .row-path { color: var(--muted); font-size: 11px; }
+  .expander { display: inline-block; width: 12px; color: var(--muted); transition: transform 0.15s; }
+  tr.task-row.expanded .expander { transform: rotate(90deg); }
   footer { padding: 16px 24px; color: var(--muted); font-size: 12px; text-align: center; border-top: 1px solid var(--line); margin-top: 24px; }
 </style>
 </head>
@@ -242,6 +255,23 @@ const fmt = (n) => "$" + (n || 0).toFixed(4);
 const usd = (n) => "$" + (n || 0).toFixed(4);
 const STATUS_LABEL = { success: "success", failed: "failed", timeout: "timeout",
   skipped_outside_window: "skipped (window)", skipped_not_allowlisted: "skipped (allowlist)" };
+const escapeHtml = (s) => (s || "").replace(/[&<>"']/g, (c) =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const expanded = new Set();
+function togglePreview(i) {
+  const row = document.querySelector(`tr.task-row[data-idx="${i}"]`);
+  const preview = document.querySelector(`tr.preview-row[data-preview="${i}"]`);
+  if (!preview) return;
+  if (preview.classList.contains("hidden")) {
+    preview.classList.remove("hidden");
+    row.classList.add("expanded");
+    expanded.add(i);
+  } else {
+    preview.classList.add("hidden");
+    row.classList.remove("expanded");
+    expanded.delete(i);
+  }
+}
 
 function pill(status) {
   const cls = ["success","done","in_flight","pending","failed","timeout"].includes(status) ? status : "pending";
@@ -262,14 +292,17 @@ async function refresh() {
     if (!d.recent || d.recent.length === 0) {
       tb.innerHTML = '<tr><td colspan="6" class="empty">No tasks yet — seed one with <code>./scripts/seed_from_repo.sh ...</code></td></tr>';
     } else {
-      tb.innerHTML = d.recent.map(t => `
-        <tr>
-          <td><code>${t.task_id}</code></td>
-          <td>${t.project}</td>
+      tb.innerHTML = d.recent.map((t, i) => `
+        <tr class="task-row" data-idx="${i}" onclick="togglePreview(${i})">
+          <td><span class="expander">▸</span> <code>${t.task_id}</code></td>
+          <td>${t.project}${t.path ? `<div class="row-path">${t.path}</div>` : ""}</td>
           <td><span class="pill">${t.kind || "prompt"}</span></td>
           <td>${t.donor || "—"}</td>
           <td>${pill(t.result_status || t.status)}</td>
           <td class="usd">${t.cost_usd ? usd(t.cost_usd) : "—"}</td>
+        </tr>
+        <tr class="preview-row hidden" data-preview="${i}">
+          <td colspan="6"><pre class="preview">${escapeHtml(t.output_preview) || "(no output yet)"}${t.output_chars > 600 ? `\n\n[… truncated, full output is ${t.output_chars.toLocaleString()} chars — fetch via /tasks/${t.task_id}]` : ""}</pre></td>
         </tr>
       `).join("");
     }

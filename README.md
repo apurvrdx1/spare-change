@@ -31,10 +31,35 @@ cp config.example.yaml config.yaml
 ./scripts/seed_from_repo.sh httpie/cli httpie/utils.py test-gen
 ```
 
+Open the live dashboard at <http://127.0.0.1:8080/>. It auto-refreshes every 2
+seconds and shows the queue, total donated USD, per-donor and per-project
+leaderboards, and click-to-expand task previews.
+
 `seed_from_repo.sh` pulls a file from any public GitHub repo and seeds it as a
 task. Three task kinds: `annotate`, `review`, `test-gen`. The Scrapling review
 above is the demo — Claude finds an infinite-loop bug, XPath construction
-issues, and test gaps in ~45 seconds.
+issues, and test gaps in ~45 seconds for under $0.02.
+
+## Multi-donor demo
+```bash
+./scripts/run_multi_donor_demo.sh    # 1 distributor + 3 donor agents in parallel
+./scripts/stop_multi_donor_demo.sh   # idempotent cleanup
+```
+
+Spins up three simulated donors (alice / bob / charlie) with distinct
+allowlists and poll intervals, seeds five Scrapling tasks across `annotate`,
+`review`, and `test-gen`, then tails all four logs. Dashboard shows three
+donors contributing to one project in real time. Verified: $0.07 donated
+across 4 completed tasks in 75 seconds.
+
+## Auth (optional)
+Set `SPARE_CHANGE_DISTRIBUTOR_TOKEN=...` in the distributor's environment.
+Agents send the same token in `config.yaml` as `auth_token`. The dashboard
+and `GET /tasks`, `GET /tasks/:id`, `GET /healthz` stay unauthenticated; the
+three write/claim endpoints (`POST /tasks`, `GET /tasks/next`, `POST /webhook/:id`)
+require `Authorization: Bearer <token>`. Comparison is constant-time
+(`secrets.compare_digest`). Leave the env var unset for unauthenticated demo
+mode.
 
 ## Architecture
 ```
@@ -60,7 +85,8 @@ issues, and test gaps in ~45 seconds.
 
 ## Roadmap
 - NATS JetStream gateway behind HTTP for durable fan-out, replacing the in-memory queue.
-- Multi-donor coordination so two agents do not burn credits on the same task.
+- SQLite persistence for the in-memory store so tasks survive restart.
+- Multi-donor *coordination* (today: simulation only — donors race for tasks; tomorrow: leases + dedup so two agents do not burn credits on the same task).
 - Move runtime to Goose once Anthropic ships OAuth for Claude subscriptions. Today the agent shells out to `claude --print`.
 
 ## Why not Goose / Numaflow today
