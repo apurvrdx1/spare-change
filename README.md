@@ -63,17 +63,34 @@ mode.
 
 ## Architecture
 ```
-+--------------+      HTTP      +-------------------+      HTTP      +--------------+
-| Donor agent  | <------------> |   Distributor     | <------------> |   Result     |
-| (Python)     |  poll / post   |  (FastAPI + queue)|   webhook      |   webhook    |
-+------+-------+                +-------------------+                +--------------+
-       |
-       | subprocess: claude --print
-       v
-+--------------+
-| claude (Pro) |
-+--------------+
+┌──────────────┐                ┌──────────────────────────────────┐
+│  Maintainer  │   POST /tasks  │          Distributor             │
+│  (seed task) │ ─────────────► │  ┌────────────────────────────┐  │
+└──────────────┘                │  │  in-memory queue + costs   │  │
+                                │  │  donor & project leaders   │  │
+┌──────────────┐  GET /tasks/   │  └────────────────────────────┘  │
+│ Donor agent  │     next       │            ▲     │               │
+│  (Python)    │ ─────────────► │   webhook  │     │ task JSON     │
+│              │ ◄───────────── │   /:id     │     ▼               │
+└──────┬───────┘   task chunk   └────────────┼─────────────────────┘
+       │                                     │           │
+       │ subprocess: claude --print          │           │ GET /
+       ▼                                     │           ▼
+┌──────────────┐      stdout/stderr          │   ┌──────────────┐
+│ claude (Pro) │ ──────────────► result ─────┘   │  Dashboard   │
+│  session     │     POST /webhook/:id           │ (auto 2s)    │
+└──────────────┘                                 └──────────────┘
 ```
+
+Maintainer seeds tasks; the distributor holds them in an in-memory queue and
+tracks per-donor and per-project totals plus estimated USD cost. The donor
+agent polls, runs `claude --print` against the donor's session, and POSTs the
+result back, which the dashboard renders live.
+
+The distributor's in-memory queue is the swap-point for NATS JetStream. The
+agent's `claude --print` subprocess is the swap-point for Goose runtime
+(pending Anthropic OAuth for subscriptions).
+
 
 ## Real OSS problems this unlocks
 - Whole-repo semantic re-indexing for large codebases (Kubernetes, Rust).

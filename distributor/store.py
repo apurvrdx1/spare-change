@@ -55,6 +55,8 @@ class TaskStore:
 
     def aggregate(self) -> dict:
         """Roll up queue counts and per-donor / per-project donation totals."""
+        from .artifacts import count_bug_findings
+
         with self._lock:
             records = list(self._records.values())
 
@@ -63,6 +65,9 @@ class TaskStore:
         by_project: dict[str, dict] = {}
         total_usd = 0.0
         total_tasks_done = 0
+        total_bugs_found = 0
+        total_compute_seconds = 0.0
+        total_output_chars = 0
 
         for rec in records:
             queue_key = rec.status.value if rec.status.value in queue else None
@@ -75,16 +80,25 @@ class TaskStore:
             cost = float(rec.result.estimated_cost_usd or 0.0)
             donor = rec.result.agent_id
             project = rec.task.project_slug
+            kind = (rec.task.metadata or {}).get("kind") or rec.task.kind
+            output = rec.result.output or ""
+            bugs = count_bug_findings(output) if kind == "review" else 0
 
-            d = by_donor.setdefault(donor, {"tasks": 0, "usd": 0.0})
+            d = by_donor.setdefault(donor, {"tasks": 0, "usd": 0.0, "bugs_found": 0})
             d["tasks"] += 1
             d["usd"] += cost
+            d["bugs_found"] += bugs
 
-            p = by_project.setdefault(project, {"tasks": 0, "usd": 0.0})
+            p = by_project.setdefault(project, {"tasks": 0, "usd": 0.0, "bugs_found": 0})
             p["tasks"] += 1
             p["usd"] += cost
+            p["bugs_found"] += bugs
 
             total_usd += cost
+            total_bugs_found += bugs
+            total_output_chars += len(output)
+            if rec.result.started_at and rec.result.finished_at:
+                total_compute_seconds += (rec.result.finished_at - rec.result.started_at).total_seconds()
             if rec.result.status == ResultStatus.SUCCESS:
                 total_tasks_done += 1
 
@@ -92,6 +106,11 @@ class TaskStore:
             "queue": queue,
             "total_donated_usd": total_usd,
             "total_tasks_done": total_tasks_done,
+            "total_bugs_found": total_bugs_found,
+            "total_compute_seconds": total_compute_seconds,
+            "total_output_chars": total_output_chars,
+            "projects_helped": len(by_project),
+            "donors_active": len(by_donor),
             "by_donor": by_donor,
             "by_project": by_project,
         }

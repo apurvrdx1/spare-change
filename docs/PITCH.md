@@ -93,12 +93,13 @@ Four concrete jobs nobody is doing today. One: nightly whole-repo re-indexing �
 ## Slide 7 — Live demo
 
 **On-screen copy:**
-config.yaml → start daemon → seed task → result lands.
+Live dashboard, left. Seed a real review on Scrapling, right.
+Watch the leaderboard tick. $0.02. 45 seconds.
 
 **Speaker notes:**
-Okay, real thing. On the left, my config: ten-hour window, two allowlisted repos, a dollar cap. I start the local agent. On the right, a mock distributor — I'm seeding one task: draft type annotations for this untyped Python file from a real project. Agent polls, picks it up, you'll see it shell out to claude --print in my session, work happens, result POSTs back. Distributor logs it. That's the loop. End to end, donor never touched a thing after starting the daemon.
+Real thing. On the left, the live dashboard at localhost:8080 — queue, per-donor and per-project leaderboards, total donated USD, auto-refreshing every two seconds. On the right, I seed one task against a real OSS project: review scrapling/core/mixins.py. Agent picks it up, shells out to claude --print in my session, posts the result back. Watch the leaderboard update live. Claude finds real bugs in a real OSS project — an infinite-loop, XPath issues, test gaps — in about 45 seconds for under $0.02. Click the task to expand the raw claude output.
 
-**Visual:** Split terminal: donor daemon logs left, distributor receiving result right. Timestamped.
+**Visual:** Split screen: dark-mode dashboard on the left with queue counts and leaderboards animating; terminal on the right running the Scrapling review and streaming claude output. Cost ticker visible on the dashboard.
 
 ---
 

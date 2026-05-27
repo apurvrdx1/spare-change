@@ -20,8 +20,9 @@ from typing import Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
+from .artifacts import issue_title, to_issue_markdown
 from .schemas import CreateTaskRequest, Task, TaskRecord, WebhookResult
 from .store import TaskStore
 
@@ -114,6 +115,23 @@ def get_task(task_id: str) -> TaskRecord:
     return rec
 
 
+@app.get("/tasks/{task_id}/issue.md", response_class=PlainTextResponse)
+def task_issue_md(task_id: str) -> PlainTextResponse:
+    """Return the task result as GitHub-issue-ready markdown."""
+    rec = store.get(task_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="unknown task_id")
+    if rec.result is None:
+        raise HTTPException(status_code=409, detail="task has no result yet")
+    body = to_issue_markdown(rec)
+    title = issue_title(rec)
+    headers = {
+        "X-Spare-Change-Issue-Title": title,
+        "Content-Disposition": f'inline; filename="{task_id}-issue.md"',
+    }
+    return PlainTextResponse(content=body, media_type="text/markdown", headers=headers)
+
+
 @app.get("/api/dashboard")
 def api_dashboard() -> dict:
     agg = store.aggregate()
@@ -197,6 +215,18 @@ _DASHBOARD_HTML = """<!doctype html>
   .pill.failed { background: #4a1414; color: var(--red); }
   code { font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
   .empty { color: var(--muted); font-size: 13px; padding: 12px 0; text-align: center; }
+  .impact-byline { padding: 28px 24px; border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 32px; flex-wrap: wrap;
+    font: 17px/1.5 Charter, "Source Serif Pro", Georgia, "Times New Roman", serif;
+    color: var(--text); letter-spacing: -0.005em; }
+  .impact-byline .impact-num { font-weight: 600; padding: 0 2px;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "lnum" 1, "tnum" 1; }
+  .impact-byline .impact-meta { font: 500 10px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em;
+    white-space: nowrap; align-self: center; }
+  .impact-byline .impact-meta .dot { color: var(--line); margin: 0 6px; }
   tr.task-row { cursor: pointer; }
   tr.task-row:hover { background: #161e29; }
   tr.preview-row td { padding: 0; border-bottom: 1px solid var(--line); }
@@ -215,6 +245,19 @@ _DASHBOARD_HTML = """<!doctype html>
   <h1>spare-change <span class="tag">distributor / donor-side dashboard</span></h1>
   <span class="live" id="live">live · refresh 2s</span>
 </header>
+
+<div class="impact-byline">
+  <span>
+    <span class="impact-num" id="impact-bugs">0</span> bugs surfaced in
+    <span class="impact-num" id="impact-minutes">0</span> minutes of donated compute,
+    across <span class="impact-num" id="impact-projects">0</span> open-source project<span id="proj-plural">s</span>.
+  </span>
+  <span class="impact-meta">
+    <span id="impact-donors">0</span> active donor<span id="donor-plural">s</span>
+    <span class="dot">·</span> live, refresh every 2s
+  </span>
+</div>
+
 <main>
   <div class="stats">
     <div class="stat"><div class="label">Donated</div><div class="val donated" id="donated">$0.00</div></div>
@@ -287,6 +330,12 @@ async function refresh() {
     document.getElementById("in_flight").textContent = d.queue.in_flight;
     document.getElementById("done").textContent = d.queue.done;
     document.getElementById("failed").textContent = d.queue.failed;
+    document.getElementById("impact-bugs").textContent = d.total_bugs_found || 0;
+    document.getElementById("impact-minutes").textContent = ((d.total_compute_seconds || 0) / 60).toFixed(1);
+    document.getElementById("impact-projects").textContent = d.projects_helped || 0;
+    document.getElementById("impact-donors").textContent = d.donors_active || 0;
+    document.getElementById("proj-plural").textContent = (d.projects_helped === 1) ? "" : "s";
+    document.getElementById("donor-plural").textContent = (d.donors_active === 1) ? "" : "s";
 
     const tb = document.getElementById("tasks-body");
     if (!d.recent || d.recent.length === 0) {
@@ -343,6 +392,250 @@ setInterval(refresh, 2000);
 @app.get("/", response_class=HTMLResponse)
 def dashboard() -> HTMLResponse:
     return HTMLResponse(content=_DASHBOARD_HTML)
+
+
+_RECEIPT_HTML_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>spare-change — receipt — {donor_id}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {{
+    --bg: #0b0f14;
+    --panel: #111821;
+    --line: #1f2a36;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --green: #3fb950;
+    --green-dim: #1a4d22;
+  }}
+  * {{ box-sizing: border-box; }}
+  html, body {{ margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }}
+  header {{ padding: 20px 24px; border-bottom: 1px solid var(--line); }}
+  header h1 {{ margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }}
+  header .sub {{ margin-top: 4px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }}
+  main {{ padding: 24px; max-width: 1100px; margin: 0 auto; display: grid; gap: 20px; }}
+  .panel {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }}
+  .panel h2 {{ margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em; }}
+  .summary {{ display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 16px; align-items: end; }}
+  .summary .label {{ font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }}
+  .summary .val {{ font-variant-numeric: tabular-nums; margin-top: 4px; }}
+  .summary .val.big {{ font-size: 32px; font-weight: 600; color: var(--green); }}
+  .summary .val.med {{ font-size: 20px; font-weight: 600; }}
+  .copy {{ color: var(--text); font-size: 13px; line-height: 1.6; }}
+  .copy strong {{ color: var(--green); }}
+  table {{ width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }}
+  th {{ text-align: left; font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 6px 8px; border-bottom: 1px solid var(--line); font-weight: 600; }}
+  td {{ padding: 8px; border-bottom: 1px solid var(--line); font-size: 13px; }}
+  tr:last-child td {{ border-bottom: none; }}
+  td.usd {{ color: var(--green); text-align: right; }}
+  .pill {{ display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+    background: var(--green-dim); color: var(--green); }}
+  code {{ font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }}
+  .row-path {{ color: var(--muted); font-size: 11px; }}
+  footer {{ padding: 16px 24px; color: var(--muted); font-size: 12px; text-align: center;
+    border-top: 1px solid var(--line); margin-top: 24px; }}
+  footer a {{ color: var(--muted); }}
+</style>
+</head>
+<body>
+<header>
+  <h1>spare-change · donation receipt</h1>
+  <div class="sub">donor · <code>{donor_id}</code></div>
+</header>
+<main>
+  <div class="panel">
+    <h2>Summary</h2>
+    <div class="summary">
+      <div><div class="label">Total donated</div><div class="val big">${total_usd}</div></div>
+      <div><div class="label">Tasks</div><div class="val med">{tasks_count}</div></div>
+      <div><div class="label">Projects</div><div class="val med">{projects_count}</div></div>
+      <div><div class="label">Session</div><div class="val med">{session_duration}</div></div>
+    </div>
+  </div>
+  <div class="panel copy">
+    <p><strong>For your records.</strong> spare-change donations are made by running tasks against your existing Claude Code subscription. The estimated USD value above is computed at public Anthropic API rates against equivalent token counts — useful as a reference for line-item business expense reporting. For tax purposes, consult your accountant; this is not legal advice.</p>
+  </div>
+  <div class="panel">
+    <h2>Tasks</h2>
+    <table>
+      <thead><tr><th>Task</th><th>Project</th><th>File</th><th>Kind</th><th>Status</th><th style="text-align:right">Cost</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+</main>
+<footer>generated {generated_at} · <a href="/">← back to dashboard</a></footer>
+</body>
+</html>
+"""
+
+
+_RECEIPT_EMPTY_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>spare-change — no receipt — {donor_id}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body {{ margin: 0; padding: 0; background: #0b0f14; color: #e6edf3;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }}
+  main {{ max-width: 600px; margin: 80px auto; padding: 32px; background: #111821;
+    border: 1px solid #1f2a36; border-radius: 8px; text-align: center; }}
+  h1 {{ margin: 0 0 8px 0; font-size: 20px; }}
+  p {{ color: #8b98a5; }}
+  code {{ font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; color: #e6edf3; }}
+  a {{ color: #3fb950; text-decoration: none; }}
+</style>
+</head>
+<body>
+<main>
+  <h1>No donations yet</h1>
+  <p>No donations yet for donor <code>{donor_id}</code>. Start the agent and seed a task.</p>
+  <p><a href="/">← back to dashboard</a></p>
+</main>
+</body>
+</html>
+"""
+
+
+def _collect_receipt_records(donor_id: str) -> list[TaskRecord]:
+    out: list[TaskRecord] = []
+    for rec in store.list_all():
+        if rec.result is None:
+            continue
+        if rec.result.agent_id != donor_id:
+            continue
+        if rec.result.status.value != "success":
+            continue
+        out.append(rec)
+    out.sort(
+        key=lambda r: (r.result.finished_at if r.result and r.result.finished_at else r.task.created_at),
+        reverse=True,
+    )
+    return out
+
+
+def _build_receipt_payload(donor_id: str, records: list[TaskRecord]) -> dict:
+    tasks: list[dict] = []
+    projects: list[str] = []
+    total = 0.0
+    earliest_started = None
+    latest_finished = None
+    for rec in records:
+        result = rec.result
+        cost = float(result.estimated_cost_usd or 0.0) if result else 0.0
+        total += cost
+        if rec.task.project_slug not in projects:
+            projects.append(rec.task.project_slug)
+        created = rec.task.created_at
+        if created is not None:
+            if earliest_started is None or created < earliest_started:
+                earliest_started = created
+        finished = result.finished_at if result else None
+        if finished is not None:
+            if latest_finished is None or finished > latest_finished:
+                latest_finished = finished
+        tasks.append({
+            "task_id": rec.task.task_id,
+            "project": rec.task.project_slug,
+            "path": rec.task.metadata.get("path"),
+            "kind": rec.task.metadata.get("kind") or rec.task.kind,
+            "status": result.status.value if result else rec.status.value,
+            "cost_usd": cost,
+            "finished_at": finished.isoformat() if finished else None,
+            "output_chars": len(result.output or "") if result else 0,
+        })
+    return {
+        "donor_id": donor_id,
+        "tasks_completed": len(records),
+        "total_donated_usd": total,
+        "projects_helped": projects,
+        "tasks": tasks,
+        "session_started_at": earliest_started.isoformat() if earliest_started else None,
+        "session_ended_at": latest_finished.isoformat() if latest_finished else None,
+    }
+
+
+def _format_session_duration(started_iso: str | None, ended_iso: str | None) -> str:
+    if not started_iso or not ended_iso:
+        return "—"
+    try:
+        from datetime import datetime as _dt
+        start = _dt.fromisoformat(started_iso)
+        end = _dt.fromisoformat(ended_iso)
+    except ValueError:
+        return "—"
+    delta = end - start
+    secs = int(delta.total_seconds())
+    if secs < 0:
+        return "—"
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m {secs % 60}s"
+    hours = secs // 3600
+    minutes = (secs % 3600) // 60
+    return f"{hours}h {minutes}m"
+
+
+def _escape_receipt_html(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+    )
+
+
+@app.get("/api/receipts/{donor_id}")
+def api_receipt(donor_id: str) -> dict:
+    records = _collect_receipt_records(donor_id)
+    if not records:
+        raise HTTPException(status_code=404, detail=f"no completed donations for donor {donor_id}")
+    return _build_receipt_payload(donor_id, records)
+
+
+@app.get("/receipts/{donor_id}", response_class=HTMLResponse)
+def receipt_page(donor_id: str) -> HTMLResponse:
+    from datetime import datetime as _dt, timezone as _tz
+    records = _collect_receipt_records(donor_id)
+    if not records:
+        html = _RECEIPT_EMPTY_HTML.format(donor_id=_escape_receipt_html(donor_id))
+        return HTMLResponse(content=html, status_code=404)
+    payload = _build_receipt_payload(donor_id, records)
+    rows_html_parts: list[str] = []
+    for t in payload["tasks"]:
+        path_cell = _escape_receipt_html(t["path"]) if t.get("path") else "—"
+        rows_html_parts.append(
+            "<tr>"
+            f'<td><code>{_escape_receipt_html(t["task_id"])}</code></td>'
+            f'<td>{_escape_receipt_html(t["project"])}</td>'
+            f'<td>{path_cell}</td>'
+            f'<td><span class="pill">{_escape_receipt_html(t["kind"] or "prompt")}</span></td>'
+            f'<td><span class="pill">{_escape_receipt_html(t["status"])}</span></td>'
+            f'<td class="usd">${t["cost_usd"]:.4f}</td>'
+            "</tr>"
+        )
+    rows_html = "".join(rows_html_parts) or '<tr><td colspan="6">—</td></tr>'
+    duration = _format_session_duration(
+        payload["session_started_at"], payload["session_ended_at"]
+    )
+    generated_at = _dt.now(_tz.utc).isoformat(timespec="seconds")
+    html = _RECEIPT_HTML_TEMPLATE.format(
+        donor_id=_escape_receipt_html(donor_id),
+        total_usd=f'{payload["total_donated_usd"]:.4f}',
+        tasks_count=payload["tasks_completed"],
+        projects_count=len(payload["projects_helped"]),
+        session_duration=duration,
+        rows=rows_html,
+        generated_at=generated_at,
+    )
+    return HTMLResponse(content=html)
 
 
 def main() -> None:
