@@ -24,9 +24,15 @@ cp config.example.yaml config.yaml
 # edit config.yaml if you want
 ./scripts/run_local.sh        # starts distributor + agent
 
-# in another terminal:
-./scripts/seed_task.sh        # seeds a real type-annotation task
+# in another terminal — pick one:
+./scripts/seed_task.sh                                                 # synthetic untyped helper (safe fallback)
+./scripts/seed_from_repo.sh psf/requests src/requests/help.py annotate # real file from a real OSS project
+./scripts/seed_from_repo.sh tornadoweb/tornado tornado/escape.py review
+./scripts/seed_from_repo.sh httpie/cli httpie/utils.py test-gen
 ```
+
+`seed_from_repo.sh` pulls a file from any public GitHub repo and seeds it as a
+task. Three task kinds: `annotate`, `review`, `test-gen`.
 
 ## Architecture
 ```
