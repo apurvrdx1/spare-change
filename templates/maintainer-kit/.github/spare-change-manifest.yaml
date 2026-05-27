@@ -1,0 +1,29 @@
+# spare-change manifest
+#
+# Each entry below becomes one task POSTed to the spare-change distributor by
+# `scripts/queue_spare_change_tasks.py`. Keep this file small and curated —
+# the GitHub Action runs weekly, so a 4-entry manifest produces ~16 tasks/month.
+#
+# Schema (per entry):
+#   path:            Required. Path to a file in THIS repo, relative to repo root.
+#   kind:            One of: annotate | review | test-gen. Defaults to annotate.
+#   max_cost_usd:    Optional. Per-task ceiling. Defaults to 0.50.
+#   timeout_seconds: Optional. Per-task wall clock. Defaults to 180.
+#
+# Tips:
+#   - Pick files that are self-contained — donors only see the one file.
+#   - Rotate this list. Stale manifests waste donor credits on unchanged code.
+#   - Keep "review" entries on files that actually change week-to-week.
+
+- path: src/parser/lexer.py
+  kind: review
+
+- path: src/legacy/old_module.py
+  kind: annotate
+
+- path: src/parser/grammar.py
+  kind: test-gen
+
+- path: src/api/public.py
+  kind: review
+  max_cost_usd: 0.35

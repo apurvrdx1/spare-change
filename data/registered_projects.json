@@ -1,0 +1,36 @@
+{
+  "projects": [
+    {
+      "slug": "D4Vinci/Scrapling",
+      "name": "Scrapling",
+      "blurb": "Undetectable, high-performance Python web scraping library.",
+      "accepts": ["review", "annotate", "test-gen"],
+      "url": "https://github.com/D4Vinci/Scrapling",
+      "registered_at": "2026-05-15"
+    },
+    {
+      "slug": "psf/requests",
+      "name": "Requests",
+      "blurb": "The classic Python HTTP library.",
+      "accepts": ["annotate", "test-gen"],
+      "url": "https://github.com/psf/requests",
+      "registered_at": "2026-05-20"
+    },
+    {
+      "slug": "tornadoweb/tornado",
+      "name": "Tornado",
+      "blurb": "Python async web framework and networking library.",
+      "accepts": ["review", "annotate"],
+      "url": "https://github.com/tornadoweb/tornado",
+      "registered_at": "2026-05-22"
+    },
+    {
+      "slug": "httpie/cli",
+      "name": "HTTPie",
+      "blurb": "Modern, user-friendly command-line HTTP client.",
+      "accepts": ["test-gen", "review"],
+      "url": "https://github.com/httpie/cli",
+      "registered_at": "2026-05-24"
+    }
+  ]
+}

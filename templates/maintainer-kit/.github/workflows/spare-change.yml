@@ -1,0 +1,54 @@
+# Weekly spare-change task seeding.
+#
+# This workflow runs every Monday at 09:00 UTC and seeds a batch of tasks
+# (typically code reviews) against the spare-change distributor you point
+# it at. Donors with idle Claude Pro/Max credits will pick up the tasks and
+# return markdown artifacts that you can review at your leisure.
+#
+# Before this workflow does anything useful you MUST:
+#   1. Commit `scripts/queue_spare_change_tasks.py` (from the maintainer kit).
+#   2. Commit a manifest at `.github/spare-change-manifest.yaml` (or change
+#      SPARE_CHANGE_MANIFEST_PATH below).
+#   3. Set two repo secrets under Settings -> Secrets and variables -> Actions:
+#        - SPARE_CHANGE_DISTRIBUTOR_URL   (e.g. https://distributor.example.org)
+#        - SPARE_CHANGE_DISTRIBUTOR_TOKEN (bearer token issued by the distributor)
+#
+# If you want to pause seeding without deleting the file, disable the workflow
+# under the Actions tab. Manual runs via `workflow_dispatch` still work.
+
+name: spare-change weekly seed
+
+on:
+  schedule:
+    # Mondays 09:00 UTC. Adjust to taste; keep it OFF-PEAK for the distributor.
+    - cron: "0 9 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    # If you want to require a manual approval before each run, add an
+    # environment with required reviewers here.
+    env:
+      # Override this if your manifest lives elsewhere in the repo.
+      SPARE_CHANGE_MANIFEST_PATH: .github/spare-change-manifest.yaml
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        # The script reads YAML manifests via PyYAML. Everything else is stdlib.
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Queue tasks against the distributor
+        env:
+          SPARE_CHANGE_DISTRIBUTOR_TOKEN: ${{ secrets.SPARE_CHANGE_DISTRIBUTOR_TOKEN }}
+        run: |
+          python scripts/queue_spare_change_tasks.py \
+            --manifest "$SPARE_CHANGE_MANIFEST_PATH" \
+            --distributor "${{ secrets.SPARE_CHANGE_DISTRIBUTOR_URL }}"

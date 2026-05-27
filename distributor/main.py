@@ -227,6 +227,15 @@ _DASHBOARD_HTML = """<!doctype html>
     color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em;
     white-space: nowrap; align-self: center; }
   .impact-byline .impact-meta .dot { color: var(--line); margin: 0 6px; }
+  .sparkline-strip { padding: 10px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; }
+  .sparkline-strip svg { flex: 1; height: 32px; display: block; }
+  .sparkline-strip .spark-label { font: 500 10px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; white-space: nowrap; }
+  .sparkline-strip .spark-current { color: var(--green); font-weight: 600;
+    font-variant-numeric: tabular-nums; font-size: 12px; padding-left: 4px;
+    transition: opacity 0.2s; }
+  .sparkline-strip .spark-current.tick { opacity: 0.65; }
   tr.task-row { cursor: pointer; }
   tr.task-row:hover { background: #161e29; }
   tr.preview-row td { padding: 0; border-bottom: 1px solid var(--line); }
@@ -256,6 +265,20 @@ _DASHBOARD_HTML = """<!doctype html>
     <span id="impact-donors">0</span> active donor<span id="donor-plural">s</span>
     <span class="dot">·</span> live, refresh every 2s
   </span>
+</div>
+
+<div class="sparkline-strip">
+  <svg id="sparkline" viewBox="0 0 600 32" preserveAspectRatio="none" aria-label="donation trend over last 60 seconds">
+    <defs>
+      <linearGradient id="spark-fill" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0" stop-color="#3fb950" stop-opacity="0.28"/>
+        <stop offset="1" stop-color="#3fb950" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path id="spark-area" fill="url(#spark-fill)" d=""/>
+    <path id="spark-line" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" d=""/>
+  </svg>
+  <span class="spark-label">last 60s · cumulative <span class="spark-current" id="spark-current">$0.0000</span></span>
 </div>
 
 <main>
@@ -301,6 +324,46 @@ const STATUS_LABEL = { success: "success", failed: "failed", timeout: "timeout",
 const escapeHtml = (s) => (s || "").replace(/[&<>"']/g, (c) =>
   ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 const expanded = new Set();
+
+const SPARK_MAX_POINTS = 30; // 60s at 2s polling
+const sparkHistory = [];
+let lastSparkUsd = null;
+
+function updateSparkline(totalUsd) {
+  const usd = totalUsd || 0;
+  sparkHistory.push({ t: Date.now(), usd });
+  while (sparkHistory.length > SPARK_MAX_POINTS) sparkHistory.shift();
+
+  const currentEl = document.getElementById("spark-current");
+  currentEl.textContent = "$" + usd.toFixed(4);
+  if (lastSparkUsd !== null && usd > lastSparkUsd + 1e-9) {
+    currentEl.classList.add("tick");
+    setTimeout(() => currentEl.classList.remove("tick"), 220);
+  }
+  lastSparkUsd = usd;
+
+  if (sparkHistory.length < 2) {
+    document.getElementById("spark-line").setAttribute("d", "");
+    document.getElementById("spark-area").setAttribute("d", "");
+    return;
+  }
+  const usdMin = Math.min(...sparkHistory.map(p => p.usd));
+  const usdMax = Math.max(...sparkHistory.map(p => p.usd));
+  const range = (usdMax - usdMin) || 0.0001;
+  const w = 600, h = 32, padX = 2, padY = 3;
+
+  const pts = sparkHistory.map((p, i) => {
+    const x = padX + (i / (SPARK_MAX_POINTS - 1)) * (w - 2 * padX);
+    const y = h - padY - ((p.usd - usdMin) / range) * (h - 2 * padY);
+    return [x, y];
+  });
+  const line = pts.map((pt, i) => (i === 0 ? `M${pt[0].toFixed(2)},${pt[1].toFixed(2)}`
+                                            : `L${pt[0].toFixed(2)},${pt[1].toFixed(2)}`)).join("");
+  const area = line + `L${pts[pts.length-1][0].toFixed(2)},${h} L${pts[0][0].toFixed(2)},${h} Z`;
+  document.getElementById("spark-line").setAttribute("d", line);
+  document.getElementById("spark-area").setAttribute("d", area);
+}
+
 function togglePreview(i) {
   const row = document.querySelector(`tr.task-row[data-idx="${i}"]`);
   const preview = document.querySelector(`tr.preview-row[data-preview="${i}"]`);
@@ -336,6 +399,7 @@ async function refresh() {
     document.getElementById("impact-donors").textContent = d.donors_active || 0;
     document.getElementById("proj-plural").textContent = (d.projects_helped === 1) ? "" : "s";
     document.getElementById("donor-plural").textContent = (d.donors_active === 1) ? "" : "s";
+    updateSparkline(d.total_donated_usd);
 
     const tb = document.getElementById("tasks-body");
     if (!d.recent || d.recent.length === 0) {
@@ -636,6 +700,221 @@ def receipt_page(donor_id: str) -> HTMLResponse:
         generated_at=generated_at,
     )
     return HTMLResponse(content=html)
+
+
+_DISCOVER_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>spare-change — find projects</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #111821;
+    --line: #1f2a36;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --green: #3fb950;
+    --green-dim: #1a4d22;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  header { padding: 20px 24px; border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: baseline; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  header h1 span.tag { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 13px; }
+  header a.back { color: var(--muted); font-size: 12px; text-decoration: none; }
+  header a.back:hover { color: var(--text); }
+  main { padding: 32px 24px 48px; max-width: 920px; margin: 0 auto; }
+  .intro { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 640px;
+    margin: 0 0 32px 0; }
+  .intro strong { color: var(--text); font-weight: 500; }
+  .intro code { font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); }
+  .project { padding: 28px 0; border-top: 1px solid var(--line); }
+  .project:last-child { border-bottom: 1px solid var(--line); }
+  .project .top { display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 24px; flex-wrap: wrap; }
+  .project .left { flex: 1 1 380px; min-width: 0; }
+  .project .right { flex: 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
+  .project h3 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.005em; }
+  .project h3 a { color: var(--text); text-decoration: none; }
+  .project h3 a:hover { color: var(--green); }
+  .project .slug { font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--muted); margin-top: 4px; }
+  .project .blurb { margin: 10px 0 12px 0; color: var(--text); font-size: 14px;
+    line-height: 1.55; max-width: 560px; }
+  .accepts { margin: 8px 0 0 0; }
+  .accepts .pill { display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 500; background: var(--green-dim); color: var(--green);
+    margin-right: 6px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .stats-row { display: flex; gap: 22px; align-items: baseline; justify-content: flex-end;
+    flex-wrap: wrap; }
+  .stats-row .stat { text-align: right; }
+  .stats-row .stat .label { font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.08em; }
+  .stats-row .stat .val { font-size: 18px; font-weight: 600; margin-top: 2px;
+    font-variant-numeric: tabular-nums; }
+  .stats-row .stat .val.usd { color: var(--green); }
+  .ext { display: inline-block; margin-top: 10px; color: var(--muted); font-size: 12px;
+    text-decoration: none; }
+  .ext:hover { color: var(--text); }
+  .snippet { margin-top: 16px; background: #07090d; border: 1px solid var(--line);
+    border-radius: 6px; padding: 12px 14px; position: relative; max-width: 560px; }
+  .snippet pre { margin: 0; font: 12px/1.55 ui-monospace, "SF Mono", Menlo, monospace;
+    color: #c9d1d9; white-space: pre; overflow-x: auto; padding-right: 80px; }
+  .snippet .copy-btn { position: absolute; top: 8px; right: 8px; background: transparent;
+    border: 1px solid var(--line); color: var(--muted); font-size: 11px; padding: 3px 8px;
+    border-radius: 4px; cursor: pointer; font-family: inherit; }
+  .snippet .copy-btn:hover { color: var(--text); border-color: var(--muted); }
+  .snippet .copied { position: absolute; top: 8px; right: 8px; font-size: 11px;
+    color: var(--green); padding: 4px 8px; opacity: 0; transition: opacity 0.2s;
+    pointer-events: none; background: #07090d; }
+  .snippet .copied.show { opacity: 1; }
+  .empty { color: var(--muted); padding: 48px 0; text-align: center; font-size: 14px; }
+  footer { padding: 16px 24px; color: var(--muted); font-size: 12px; text-align: center;
+    border-top: 1px solid var(--line); margin-top: 24px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>spare-change <span class="tag">· find projects</span></h1>
+  <a class="back" href="/">back to dashboard →</a>
+</header>
+
+<main>
+  <p class="intro">
+    These open-source projects are <strong>accepting donor compute</strong> via spare-change.
+    Copy a project's config snippet to add it to your donor allowlist — once it's in
+    <code>config.yaml</code>, your idle Claude Code subscription can pick up its tasks.
+  </p>
+  <div id="projects"><div class="empty">Loading…</div></div>
+</main>
+<footer>spare-change · <a href="/">dashboard</a></footer>
+
+<script>
+const escapeHtml = (s) => (s == null ? "" : String(s)).replace(/[&<>"']/g, (c) =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const usd = (n) => "$" + (n || 0).toFixed(4);
+
+function copySnippet(idx, slug) {
+  const text = "project_allowlist:\\n  - " + slug;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      const flag = document.getElementById("copied-" + idx);
+      if (!flag) return;
+      flag.classList.add("show");
+      setTimeout(() => flag.classList.remove("show"), 1500);
+    }).catch(() => {});
+  }
+}
+
+async function load() {
+  const host = document.getElementById("projects");
+  try {
+    const r = await fetch("/api/discover");
+    const d = await r.json();
+    const projects = d.projects || [];
+    if (projects.length === 0) {
+      host.innerHTML = '<div class="empty">No projects registered yet.</div>';
+      return;
+    }
+    host.innerHTML = projects.map((p, i) => {
+      const accepts = (p.accepts || []).map((k) =>
+        `<span class="pill">${escapeHtml(k)}</span>`).join("");
+      const stats = p.stats || {};
+      const snippetText = "project_allowlist:\n  - " + p.slug;
+      return `
+        <div class="project">
+          <div class="top">
+            <div class="left">
+              <h3><a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">${escapeHtml(p.name)}</a></h3>
+              <div class="slug">${escapeHtml(p.slug)}</div>
+              <p class="blurb">${escapeHtml(p.blurb)}</p>
+              <div class="accepts">${accepts}</div>
+              <a class="ext" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">github ↗</a>
+            </div>
+            <div class="right">
+              <div class="stats-row">
+                <div class="stat"><div class="label">Tasks</div><div class="val">${stats.tasks || 0}</div></div>
+                <div class="stat"><div class="label">Donated</div><div class="val usd">${usd(stats.usd)}</div></div>
+                <div class="stat"><div class="label">Bugs</div><div class="val">${stats.bugs_found || 0}</div></div>
+                <div class="stat"><div class="label">Donors</div><div class="val">${stats.donors || 0}</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="snippet">
+            <pre>${escapeHtml(snippetText)}</pre>
+            <button class="copy-btn" onclick="copySnippet(${i}, '${escapeHtml(p.slug)}')">Copy snippet</button>
+            <span class="copied" id="copied-${i}">Copied!</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (e) {
+    host.innerHTML = '<div class="empty">Could not load projects.</div>';
+  }
+}
+
+load();
+</script>
+</body>
+</html>
+"""
+
+
+@app.get("/api/discover")
+def api_discover() -> dict:
+    from pathlib import Path as _Path
+    import json as _json
+
+    path = _Path(__file__).resolve().parent.parent / "data" / "registered_projects.json"
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = _json.load(fh)
+        raw_projects = data.get("projects", []) or []
+    except FileNotFoundError:
+        log.warning("registered_projects.json not found at %s", path)
+        return {"projects": []}
+    except (OSError, ValueError) as exc:
+        log.warning("could not read registered_projects.json: %s", exc)
+        return {"projects": []}
+
+    agg = store.aggregate()
+    by_project = (agg.get("by_project") or {}) if isinstance(agg, dict) else {}
+
+    donors_by_project: dict[str, set[str]] = {}
+    for rec in store.list_all():
+        if rec.result is None:
+            continue
+        status_val = getattr(getattr(rec.result, "status", None), "value", None)
+        if status_val != "success":
+            continue
+        slug = rec.task.project_slug
+        donors_by_project.setdefault(slug, set()).add(rec.result.agent_id)
+
+    enriched: list[dict] = []
+    for entry in raw_projects:
+        if not isinstance(entry, dict):
+            continue
+        slug = entry.get("slug")
+        proj_stats = by_project.get(slug) if slug else None
+        stats = {
+            "tasks": int(proj_stats.get("tasks", 0)) if proj_stats else 0,
+            "usd": float(proj_stats.get("usd", 0.0)) if proj_stats else 0.0,
+            "bugs_found": int(proj_stats.get("bugs_found", 0)) if proj_stats else 0,
+            "donors": len(donors_by_project.get(slug, set())) if slug else 0,
+        }
+        enriched.append({**entry, "stats": stats})
+
+    return {"projects": enriched}
+
+
+@app.get("/discover", response_class=HTMLResponse)
+def discover_page() -> HTMLResponse:
+    return HTMLResponse(content=_DISCOVER_HTML)
 
 
 def main() -> None:
