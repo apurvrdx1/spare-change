@@ -126,6 +126,7 @@ def handle_task(cfg: AgentConfig, task: Task) -> WebhookResult:
         started_at=outcome.started_at,
         finished_at=outcome.finished_at,
         exit_code=outcome.exit_code,
+        estimated_cost_usd=outcome.estimated_cost_usd,
     )
 
 

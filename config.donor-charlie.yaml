@@ -1,0 +1,35 @@
+# Unique identifier for this donor agent reported back to the distributor.
+agent_id: donor_charlie
+
+# Base URL of the distributor service this agent polls for tasks.
+distributor_url: http://127.0.0.1:8080
+
+# Optional bearer token sent with every distributor request.
+auth_token: null
+
+# How often (in seconds) the agent polls the distributor for new tasks.
+poll_interval_seconds: 5
+
+# Window in which credits may be donated; bypass=true disables the gate for demos.
+credit_window:
+  weekly_reset_day: monday
+  weekly_reset_hour: 9
+  donate_last_hours: 10
+  bypass: true
+
+# Projects this donor is willing to spend credits on.
+project_allowlist:
+  - D4Vinci/Scrapling
+
+# When false, tasks outside the allowlist are logged but still executed (demo mode).
+enforce_allowlist: false
+
+# Per-task cost ceiling in USD, enforced before invoking the Claude CLI.
+max_cost_per_task_usd: 0.50
+
+# Path or command name of the Claude CLI binary used to execute tasks.
+claude_cli_path: claude
+
+# Extra CLI arguments passed to every Claude invocation.
+claude_extra_args:
+  - --print

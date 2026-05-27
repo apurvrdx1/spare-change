@@ -52,3 +52,46 @@ class TaskStore:
     def list_all(self) -> list[TaskRecord]:
         with self._lock:
             return list(self._records.values())
+
+    def aggregate(self) -> dict:
+        """Roll up queue counts and per-donor / per-project donation totals."""
+        with self._lock:
+            records = list(self._records.values())
+
+        queue = {"pending": 0, "in_flight": 0, "done": 0, "failed": 0}
+        by_donor: dict[str, dict] = {}
+        by_project: dict[str, dict] = {}
+        total_usd = 0.0
+        total_tasks_done = 0
+
+        for rec in records:
+            queue_key = rec.status.value if rec.status.value in queue else None
+            if queue_key:
+                queue[queue_key] += 1
+
+            if rec.result is None:
+                continue
+
+            cost = float(rec.result.estimated_cost_usd or 0.0)
+            donor = rec.result.agent_id
+            project = rec.task.project_slug
+
+            d = by_donor.setdefault(donor, {"tasks": 0, "usd": 0.0})
+            d["tasks"] += 1
+            d["usd"] += cost
+
+            p = by_project.setdefault(project, {"tasks": 0, "usd": 0.0})
+            p["tasks"] += 1
+            p["usd"] += cost
+
+            total_usd += cost
+            if rec.result.status == ResultStatus.SUCCESS:
+                total_tasks_done += 1
+
+        return {
+            "queue": queue,
+            "total_donated_usd": total_usd,
+            "total_tasks_done": total_tasks_done,
+            "by_donor": by_donor,
+            "by_project": by_project,
+        }

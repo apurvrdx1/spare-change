@@ -17,6 +17,22 @@ class RunOutcome:
     started_at: datetime
     finished_at: datetime
     exit_code: Optional[int]
+    input_chars: int = 0
+    output_chars: int = 0
+    estimated_cost_usd: Optional[float] = None
+
+
+# Rough public pricing for `claude --print` (assumes Sonnet 4.6 default).
+# Override with SPARE_CHANGE_MODEL_INPUT_USD_PER_MTOK / _OUTPUT_USD_PER_MTOK if your default model differs.
+_INPUT_USD_PER_MTOK = float(os.environ.get("SPARE_CHANGE_MODEL_INPUT_USD_PER_MTOK", "3.0"))
+_OUTPUT_USD_PER_MTOK = float(os.environ.get("SPARE_CHANGE_MODEL_OUTPUT_USD_PER_MTOK", "15.0"))
+_CHARS_PER_TOKEN = 4.0
+
+
+def _estimate_cost_usd(input_chars: int, output_chars: int) -> float:
+    input_mtoks = (input_chars / _CHARS_PER_TOKEN) / 1_000_000
+    output_mtoks = (output_chars / _CHARS_PER_TOKEN) / 1_000_000
+    return input_mtoks * _INPUT_USD_PER_MTOK + output_mtoks * _OUTPUT_USD_PER_MTOK
 
 
 def _build_full_prompt(prompt: str, context_files: list[ContextFile]) -> str:
@@ -39,6 +55,7 @@ def run_claude(
 ) -> RunOutcome:
     """Run the Claude CLI as a subprocess with hang-proof timeout handling."""
     full_prompt = _build_full_prompt(prompt, context_files)
+    input_chars = len(full_prompt)
     args = [cli_path, *(extra_args or [])]
     started_at = datetime.now(timezone.utc)
 
@@ -117,6 +134,8 @@ def run_claude(
     if status == ResultStatus.FAILED:
         error = stderr.strip() if stderr and stderr.strip() else f"Exit code {exit_code}"
 
+    output_chars = len(stdout or "")
+    estimated_cost_usd = _estimate_cost_usd(input_chars, output_chars)
     return RunOutcome(
         status=status,
         output=stdout or "",
@@ -124,4 +143,7 @@ def run_claude(
         started_at=started_at,
         finished_at=finished_at,
         exit_code=exit_code,
+        input_chars=input_chars,
+        output_chars=output_chars,
+        estimated_cost_usd=estimated_cost_usd,
     )
