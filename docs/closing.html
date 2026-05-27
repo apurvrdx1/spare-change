@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>spare-change · github.com/apurvrdx1/spare-change</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --line: #1f2a36;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --green: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; }
+  body { display: flex; flex-direction: column; }
+  main { flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 6vh 7vw; max-width: 1100px; margin: 0 auto; width: 100%; }
+
+  h1 { margin: 0; font: 700 92px/0.95 Charter, "Source Serif Pro", Georgia, "Times New Roman", serif;
+    letter-spacing: -0.028em; color: var(--text); }
+  h1 .dot { color: var(--green); }
+
+  .tagline { margin-top: 28px; font: 400 22px/1.45 Charter, "Source Serif Pro", Georgia, serif;
+    color: var(--text); max-width: 680px; letter-spacing: -0.005em; }
+  .tagline em { font-style: italic; color: var(--green); font-weight: 500; }
+
+  .url-block { margin-top: 64px; padding: 28px 0;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .url-label { font: 500 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.18em;
+    margin-bottom: 14px; }
+  .url { font: 600 34px/1.15 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--green); letter-spacing: -0.01em; word-break: break-all; }
+  .url::before { content: "↗ "; color: var(--muted); font-weight: 400; }
+
+  .ask { margin-top: 56px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+  .ask-item { font: 400 15px/1.5 -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text); }
+  .ask-item .label { display: block; font-weight: 600; color: var(--green);
+    text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px;
+    margin-bottom: 8px; }
+  .ask-item p { margin: 0; }
+
+  footer { padding: 22px 7vw; color: var(--muted);
+    font: 500 11px/1 -apple-system, sans-serif; text-transform: uppercase;
+    letter-spacing: 0.18em; border-top: 1px solid var(--line); }
+  footer .find { color: var(--text); font-weight: 600; }
+  footer .sep { color: var(--line); margin: 0 12px; }
+
+  @media (max-width: 760px) {
+    h1 { font-size: 56px; }
+    .tagline { font-size: 18px; }
+    .url { font-size: 22px; }
+    .ask { grid-template-columns: 1fr; gap: 24px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>spare-change<span class="dot">.</span></h1>
+  <p class="tagline">
+    Donate the Claude Pro and Max credits you <em>won't use this week</em>
+    to open source. The work runs in your own session. The maintainer gets
+    the result.
+  </p>
+
+  <div class="url-block">
+    <div class="url-label">Repository</div>
+    <div class="url">github.com/apurvrdx1/spare-change</div>
+  </div>
+
+  <div class="ask">
+    <div class="ask-item">
+      <span class="label">Maintainers</span>
+      <p>Three files in your repo to opt in. Bring me a queue.</p>
+    </div>
+    <div class="ask-item">
+      <span class="label">Donors</span>
+      <p>Install the daemon. Donate one window. Tell me what broke.</p>
+    </div>
+    <div class="ask-item">
+      <span class="label">Builders</span>
+      <p>Distributor is open. NATS gateway and multi-donor coordination next.</p>
+    </div>
+  </div>
+</main>
+<footer>
+  <span class="find">Find me after.</span>
+  <span class="sep">·</span>
+  built for the hackathon
+  <span class="sep">·</span>
+  apurv ray
+</footer>
+</body>
+</html>
